@@ -16,44 +16,41 @@ jobs:
       - name: 1. Checkout repository
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt dpkg để đóng gói .deb
+      - name: 2. Cài đặt dpkg
         run: |
           brew install dpkg
 
-      - name: 3. Lấy đường dẫn Xcode iPhoneOS SDK
+      - name: 3. Lấy SDK iOS từ Xcode
         id: sdk
         run: |
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDK_PATH=$SDK_PATH" >> $GITHUB_ENV
-          echo "Using iOS SDK: $SDK_PATH"
 
-      - name: 4. Biên dịch từng file .m thành file đối tượng .o riêng rẽ
+      - name: 4. Biên dịch từng file .m thành file đối tượng .o
         run: |
           mkdir -p build/obj
           CFLAGS="-isysroot ${{ env.SDK_PATH }} -arch arm64 -arch arm64e -miphoneos-version-min=14.0 -fobjc-arc -O2"
 
-          echo ">>> 1/4 Đang biên dịch VSPassthroughWindow.m -> VSPassthroughWindow.o..."
+          echo ">>> 1/4 VSPassthroughWindow.m -> .o"
           clang $CFLAGS -c VSPassthroughWindow.m -o build/obj/VSPassthroughWindow.o
 
-          echo ">>> 2/4 Đang biên dịch VSFloatingButton.m -> VSFloatingButton.o..."
+          echo ">>> 2/4 VSFloatingButton.m -> .o"
           clang $CFLAGS -c VSFloatingButton.m -o build/obj/VSFloatingButton.o
 
-          echo ">>> 3/4 Đang biên dịch VSMacroEngine.m -> VSMacroEngine.o..."
+          echo ">>> 3/4 VSMacroEngine.m -> .o"
           clang $CFLAGS -c VSMacroEngine.m -o build/obj/VSMacroEngine.o
 
-          echo ">>> 4/4 Đang biên dịch Tweak.m -> Tweak.o..."
+          echo ">>> 4/4 Tweak.m -> .o"
           clang $CFLAGS -c Tweak.m -o build/obj/Tweak.o
 
-          echo "=== KIỂM TRA CÁC FILE .O ĐÃ SINH RA ==="
           ls -lh build/obj/
 
-      - name: 5. Liên kết (Linker) các file .o thành VideoStarRecorder.dylib
+      - name: 5. Liên kết các file .o thành VideoStarRecorder.dylib
         run: |
           mkdir -p build/dylib
           LDFLAGS="-isysroot ${{ env.SDK_PATH }} -arch arm64 -arch arm64e -miphoneos-version-min=14.0 -shared -fobjc-arc"
           FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore"
 
-          echo ">>> Đang liên kết các file .o thành .dylib..."
           clang $LDFLAGS $FRAMEWORKS \
             build/obj/VSPassthroughWindow.o \
             build/obj/VSFloatingButton.o \
@@ -61,14 +58,10 @@ jobs:
             build/obj/Tweak.o \
             -o build/dylib/VideoStarRecorder.dylib
 
-          # Ký số Ad-Hoc chuẩn Apple
           codesign -f -s - build/dylib/VideoStarRecorder.dylib
-
-          echo "=== THÔNG TIN FILE DYLIB HOÀN TẤT ==="
           ls -lh build/dylib/VideoStarRecorder.dylib
-          file build/dylib/VideoStarRecorder.dylib
 
-      - name: 6. Đóng gói thành file .deb (Debian Package)
+      - name: 6. Đóng gói thành file .deb
         run: |
           mkdir -p build/deb_package/DEBIAN
           mkdir -p build/deb_package/Library/MobileSubstrate/DynamicLibraries
@@ -78,12 +71,11 @@ jobs:
           cp VideoStarRecorder.plist build/deb_package/Library/MobileSubstrate/DynamicLibraries/
 
           dpkg-deb -Zgzip --root-owner-group -b build/deb_package build/VideoStarRecorder.deb
-          ls -lh build/*.deb
 
-      - name: 7. Upload Artifacts (Tải file .o, .dylib, .deb trực tiếp từ GitHub)
+      - name: 7. Tải lên Artifacts để tải về
         uses: actions/upload-artifact@v4
         with:
-          name: VideoStarRecorder-Compiled-Output
+          name: VideoStarRecorder-Release
           path: |
             build/obj/*.o
             build/dylib/*.dylib
