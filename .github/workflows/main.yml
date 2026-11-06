@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     name: Compile .o, .dylib & Package .deb
-    runs-on: macos-14
+    runs-on: macos-13 # Sử dụng máy ảo tiêu chuẩn phổ quát
 
     steps:
       - name: 1. Checkout mã nguồn
@@ -22,9 +22,9 @@ jobs:
         run: |
           brew install dpkg ldid
 
-      - name: 3. Cài đặt Theos & iOS SDK chính chủ trực tiếp
+      - name: 3. Cài đặt Theos & iOS SDK chính chủ
         run: |
-          echo "=== CLONING THEOS CHÍNH CHỦ ==="
+          echo "=== CLONING THEOS ==="
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
 
           echo "=== CLONING THEOS SDKS ==="
