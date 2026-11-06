@@ -1,0 +1,9 @@
+Package: com.expert.videostarrecorder
+Name: VideoStar Macro Recorder & Automation
+Depends: mobilesubstrate (>= 0.9.5000)
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Professional Macro Action Recorder & Automation Script Engine for VideoStar.
+Maintainer: Reverse Engineering Lab
+Author: Expert iOS Tweak Developer
+Section: Tweaks
