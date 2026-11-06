@@ -9,61 +9,83 @@ on:
 
 jobs:
   build:
-    name: Compile .o, .dylib & Package .deb
-    runs-on: macos-13 # Sử dụng máy ảo tiêu chuẩn phổ quát
+    name: Compile .m to .o & Link .dylib
+    runs-on: macos-latest
 
     steps:
-      - name: 1. Checkout mã nguồn
+      - name: 1. Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: 2. Cài đặt các công cụ phụ trợ (dpkg, ldid)
+      - name: 2. Cài đặt dpkg để đóng gói .deb
         run: |
-          brew install dpkg ldid
+          brew install dpkg
 
-      - name: 3. Cài đặt Theos & iOS SDK chính chủ
+      - name: 3. Lấy đường dẫn Xcode iPhoneOS SDK
+        id: sdk
         run: |
-          echo "=== CLONING THEOS ==="
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK_PATH=$SDK_PATH" >> $GITHUB_ENV
+          echo "Using iOS SDK: $SDK_PATH"
 
-          echo "=== CLONING THEOS SDKS ==="
-          git clone --depth=1 https://github.com/theos/sdks.git $HOME/theos/sdks
-
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-
-      - name: 4. Biên dịch mã nguồn thành file .o và .dylib
+      - name: 4. Biên dịch từng file .m thành file đối tượng .o riêng rẽ
         run: |
-          echo "=== TIẾN HÀNH BIÊN DỊCH VỚI THEOS ==="
-          make clean
-          make FINALPACKAGE=1
+          mkdir -p build/obj
+          CFLAGS="-isysroot ${{ env.SDK_PATH }} -arch arm64 -arch arm64e -miphoneos-version-min=14.0 -fobjc-arc -O2"
 
-      - name: 5. Thu thập các file .o, .dylib và .deb
+          echo ">>> 1/4 Đang biên dịch VSPassthroughWindow.m -> VSPassthroughWindow.o..."
+          clang $CFLAGS -c VSPassthroughWindow.m -o build/obj/VSPassthroughWindow.o
+
+          echo ">>> 2/4 Đang biên dịch VSFloatingButton.m -> VSFloatingButton.o..."
+          clang $CFLAGS -c VSFloatingButton.m -o build/obj/VSFloatingButton.o
+
+          echo ">>> 3/4 Đang biên dịch VSMacroEngine.m -> VSMacroEngine.o..."
+          clang $CFLAGS -c VSMacroEngine.m -o build/obj/VSMacroEngine.o
+
+          echo ">>> 4/4 Đang biên dịch Tweak.m -> Tweak.o..."
+          clang $CFLAGS -c Tweak.m -o build/obj/Tweak.o
+
+          echo "=== KIỂM TRA CÁC FILE .O ĐÃ SINH RA ==="
+          ls -lh build/obj/
+
+      - name: 5. Liên kết (Linker) các file .o thành VideoStarRecorder.dylib
         run: |
-          mkdir -p output/object_files
-          mkdir -p output/dylib
-          mkdir -p output/deb
+          mkdir -p build/dylib
+          LDFLAGS="-isysroot ${{ env.SDK_PATH }} -arch arm64 -arch arm64e -miphoneos-version-min=14.0 -shared -fobjc-arc"
+          FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore"
 
-          # Gom toàn bộ file .o được sinh ra
-          find .theos/obj -type f -name "*.o" -exec cp {} output/object_files/ \; 2>/dev/null || true
+          echo ">>> Đang liên kết các file .o thành .dylib..."
+          clang $LDFLAGS $FRAMEWORKS \
+            build/obj/VSPassthroughWindow.o \
+            build/obj/VSFloatingButton.o \
+            build/obj/VSMacroEngine.o \
+            build/obj/Tweak.o \
+            -o build/dylib/VideoStarRecorder.dylib
 
-          # Gom file .dylib
-          find .theos/obj -type f -name "*.dylib" -exec cp {} output/dylib/ \; 2>/dev/null || true
+          # Ký số Ad-Hoc chuẩn Apple
+          codesign -f -s - build/dylib/VideoStarRecorder.dylib
 
-          # Gom file gói .deb
-          if [ -d "packages" ]; then
-            cp packages/*.deb output/deb/ 2>/dev/null || true
-          fi
+          echo "=== THÔNG TIN FILE DYLIB HOÀN TẤT ==="
+          ls -lh build/dylib/VideoStarRecorder.dylib
+          file build/dylib/VideoStarRecorder.dylib
 
-          echo "=== DANH SÁCH FILE .O ĐÃ BIÊN DỊCH ==="
-          ls -lh output/object_files/
+      - name: 6. Đóng gói thành file .deb (Debian Package)
+        run: |
+          mkdir -p build/deb_package/DEBIAN
+          mkdir -p build/deb_package/Library/MobileSubstrate/DynamicLibraries
 
-          echo "=== FILE .DYLIB THÀNH PHẨM ==="
-          ls -lh output/dylib/
+          cp control build/deb_package/DEBIAN/control
+          cp build/dylib/VideoStarRecorder.dylib build/deb_package/Library/MobileSubstrate/DynamicLibraries/
+          cp VideoStarRecorder.plist build/deb_package/Library/MobileSubstrate/DynamicLibraries/
 
-      - name: 6. Upload Artifacts lên GitHub để tải về
+          dpkg-deb -Zgzip --root-owner-group -b build/deb_package build/VideoStarRecorder.deb
+          ls -lh build/*.deb
+
+      - name: 7. Upload Artifacts (Tải file .o, .dylib, .deb trực tiếp từ GitHub)
         uses: actions/upload-artifact@v4
         with:
-          name: VideoStarRecorder-Build-Artifacts
-          path: output/
+          name: VideoStarRecorder-Compiled-Output
+          path: |
+            build/obj/*.o
+            build/dylib/*.dylib
+            build/*.deb
           retention-days: 7
