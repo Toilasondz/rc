@@ -5,12 +5,12 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên giao diện web GitHub
+  workflow_dispatch:
 
 jobs:
   build:
     name: Compile .o, .dylib & Package .deb
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - name: 1. Checkout mã nguồn
@@ -18,42 +18,50 @@ jobs:
         with:
           submodules: recursive
 
-      - name: 2. Cài đặt môi trường Theos & iOS SDK
-        uses: themackabu/action-theos@v1.4
-        with:
-          sdks-repo: 'https://github.com/theos/sdks'
-
-      - name: 3. Biên dịch các file .m và .xm thành các file .o và .dylib
+      - name: 2. Cài đặt các công cụ phụ trợ (dpkg, ldid)
         run: |
-          echo "=== BẮT ĐẦU BIÊN DỊCH VỚI THEOS ==="
+          brew install dpkg ldid
+
+      - name: 3. Cài đặt Theos & iOS SDK chính chủ trực tiếp
+        run: |
+          echo "=== CLONING THEOS CHÍNH CHỦ ==="
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+
+          echo "=== CLONING THEOS SDKS ==="
+          git clone --depth=1 https://github.com/theos/sdks.git $HOME/theos/sdks
+
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: 4. Biên dịch mã nguồn thành file .o và .dylib
+        run: |
+          echo "=== TIẾN HÀNH BIÊN DỊCH VỚI THEOS ==="
           make clean
           make FINALPACKAGE=1
 
-      - name: 4. Thu thập và tổ chức các file .o, .dylib, .deb
+      - name: 5. Thu thập các file .o, .dylib và .deb
         run: |
-          echo "=== TẠO THƯ MỤC XUẤT OUTPUT ==="
           mkdir -p output/object_files
           mkdir -p output/dylib
           mkdir -p output/deb
 
-          # Sao chép toàn bộ các file .o được sinh ra
-          find .theos/obj -type f -name "*.o" -exec cp {} output/object_files/ \;
+          # Gom toàn bộ file .o được sinh ra
+          find .theos/obj -type f -name "*.o" -exec cp {} output/object_files/ \; 2>/dev/null || true
 
-          # Sao chép file .dylib
-          find .theos/obj -type f -name "*.dylib" -exec cp {} output/dylib/ \;
+          # Gom file .dylib
+          find .theos/obj -type f -name "*.dylib" -exec cp {} output/dylib/ \; 2>/dev/null || true
 
-          # Sao chép file gói cài đặt .deb
+          # Gom file gói .deb
           if [ -d "packages" ]; then
             cp packages/*.deb output/deb/ 2>/dev/null || true
           fi
 
           echo "=== DANH SÁCH FILE .O ĐÃ BIÊN DỊCH ==="
           ls -lh output/object_files/
-          
-          echo "=== FILE .DYLIB ĐÃ LIÊN KẾT ==="
+
+          echo "=== FILE .DYLIB THÀNH PHẨM ==="
           ls -lh output/dylib/
 
-      - name: 5. Upload Artifacts (Tải về trọn gói từ GitHub Actions)
+      - name: 6. Upload Artifacts lên GitHub để tải về
         uses: actions/upload-artifact@v4
         with:
           name: VideoStarRecorder-Build-Artifacts
